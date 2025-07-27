@@ -1,9 +1,10 @@
 {
-  "name": "card",
-  "displayName": "Card",
-  "version": "0.0.1",
-  "description": "SmartCard AI",
+  "name": "smartcard-ai-extension",
+  "displayName": "SmartCard AI Assistant",
+  "version": "1.0.0",
+  "description": "AI-powered smart card assistant for enhanced web browsing experience",
   "author": "Zijing Zhang",
+  "homepage": "https://github.com/your-username/smartcard-ai-extension",
   "scripts": {
     "dev": "plasmo dev",
     "build": "plasmo build",
@@ -25,7 +26,27 @@
   },
   "manifest": {
     "host_permissions": [
-      "https://*/*"
+      "https://*.amazon.com/*",
+      "https://*.walmart.com/*",
+      "https://*.target.com/*",
+      "https://*.bestbuy.com/*",
+      "https://*.safeway.com/*",
+      "https://*.kroger.com/*",
+      "https://*.wholefoodsmarket.com/*",
+      "https://*.costco.com/*",
+      "https://*.macys.com/*",
+      "https://*.newegg.com/*",
+      "https://*.cvs.com/*",
+      "https://*.walgreens.com/*",
+      "https://*.doordash.com/*",
+      "https://*.ubereats.com/*",
+      "https://*.expedia.com/*",
+      "https://*.southwest.com/*",
+      "https://*.shell.com/*"
+    ],
+    "permissions": [
+      "activeTab",
+      "storage"
     ]
   }
 }
