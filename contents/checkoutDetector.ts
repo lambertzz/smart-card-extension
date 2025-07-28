@@ -24,6 +24,292 @@ export const config: PlasmoCSConfig = {
 
 console.log("SAFEWAY DEBUG: Content script loaded on", window.location.hostname, "URL:", window.location.href)
 
+// Debug utilities
+function runDiagnostic() {
+  console.log("=== EXTENSION DIAGNOSTIC ===")
+  console.log("Current URL:", window.location.href)
+  console.log("Hostname:", window.location.hostname)
+  console.log("Is checkout page:", isCheckoutPage())
+  console.log("Extension context valid:", isExtensionContextValid())
+  console.log("Overlay exists:", !!checkoutOverlay)
+  
+  if (checkoutOverlay) {
+    console.log("Current recommendation:", currentRecommendation)
+  }
+  
+  // Test amount detection
+  const detectedAmount = estimateTransactionAmount()
+  console.log("Detected amount:", detectedAmount)
+  
+  console.log("=== END DIAGNOSTIC ===")
+}
+
+// Comprehensive test suite
+function runTestSuite() {
+  console.log("🧪 === COMPREHENSIVE TEST SUITE ===")
+  
+  // Test 1: Checkout Page Detection
+  console.log("\n📋 TEST 1: Checkout Page Detection")
+  testCheckoutPageDetection()
+  
+  // Test 2: Amount Detection
+  console.log("\n💰 TEST 2: Amount Detection")
+  testAmountDetection()
+  
+  // Test 3: Merchant Recognition
+  console.log("\n🏪 TEST 3: Merchant Recognition") 
+  testMerchantRecognition()
+  
+  // Test 4: Extension Context
+  console.log("\n⚙️ TEST 4: Extension Context")
+  testExtensionContext()
+  
+  // Test 5: DOM Analysis
+  console.log("\n🔍 TEST 5: DOM Analysis")
+  testDOMAnalysis()
+  
+  console.log("\n✅ === TEST SUITE COMPLETE ===")
+}
+
+function testCheckoutPageDetection() {
+  const url = window.location.href.toLowerCase()
+  const hostname = window.location.hostname.toLowerCase()
+  
+  console.log(`Current URL: ${url}`)
+  console.log(`Hostname: ${hostname}`)
+  
+  // Test exclusion patterns
+  const excludePatterns = [
+    'signin', 'sign-in', 'login', 'auth', 'register', 'signup', 'sign-up',
+    'forgot-password', 'reset-password', 'verify', 'confirmation',
+    'oauth', 'sso', 'account', 'profile', 'settings'
+  ]
+  
+  const isExcluded = excludePatterns.some(pattern => 
+    hostname.includes(pattern) || url.includes(`/${pattern}`) || url.includes(`${pattern}.`)
+  )
+  
+  console.log(`❌ Is excluded page: ${isExcluded}`)
+  if (isExcluded) {
+    console.log(`   Excluded by patterns: ${excludePatterns.filter(p => hostname.includes(p) || url.includes(`/${p}`) || url.includes(`${p}.`)).join(', ')}`)
+  }
+  
+  // Test site-specific rules
+  const siteCheckoutRules = {
+    'costco.com': () => url.includes('/checkout') && !url.includes('/cart') && !url.includes('signin'),
+    'safeway.com': () => url.includes('/checkout') || url.includes('/payment'),
+    'walmart.com': () => url.includes('/checkout') || url.includes('/pay'),
+    'target.com': () => url.includes('/checkout') || url.includes('/payment'),
+    'amazon.com': () => {
+      return url.includes('/gp/buy/spc/') || url.includes('/checkout/p/') ||
+             (url.includes('/checkout/') && !url.includes('/gp/cart/')) ||
+             url.includes('pipelinetype=chewbacca')
+    }
+  }
+  
+  const siteRule = Object.entries(siteCheckoutRules).find(([domain]) => hostname.includes(domain))
+  if (siteRule) {
+    const siteResult = siteRule[1]()
+    console.log(`🏪 Site-specific rule (${siteRule[0]}): ${siteResult}`)
+  } else {
+    console.log(`🏪 No site-specific rule found`)
+  }
+  
+  // Final result
+  const finalResult = isCheckoutPage()
+  console.log(`🎯 Final checkout detection result: ${finalResult}`)
+}
+
+function testAmountDetection() {
+  console.log("Testing different amount detection methods...")
+  
+  // Test text pattern detection
+  const textAmount = detectCheckoutPageAmount()
+  console.log(`📝 Text pattern detection: $${textAmount}`)
+  
+  // Test selector-based detection
+  const selectorAmount = estimateTransactionAmount()
+  console.log(`🎯 Selector-based detection: $${selectorAmount}`)
+  
+  // Analyze page content for potential amounts
+  const potentialAmounts = findPotentialAmounts()
+  console.log(`💵 All potential amounts found:`, potentialAmounts)
+}
+
+function findPotentialAmounts() {
+  const amounts = []
+  const allElements = document.querySelectorAll('*:not(script):not(style):not(noscript)')
+  
+  for (const element of allElements) {
+    const text = element.textContent || ''
+    if (text.length > 1000 || text.includes('function')) continue
+    
+    const matches = text.match(/\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g)
+    if (matches) {
+      matches.forEach(match => {
+        const amount = parseFloat(match.replace('$', '').replace(/,/g, ''))
+        if (amount > 0 && amount < 10000) {
+          amounts.push({
+            amount: amount,
+            text: text.trim().substring(0, 100) + '...',
+            element: element.tagName
+          })
+        }
+      })
+    }
+  }
+  
+  return amounts.sort((a, b) => b.amount - a.amount).slice(0, 10)
+}
+
+function testMerchantRecognition() {
+  const hostname = window.location.hostname.toLowerCase()
+  
+  const merchantMap = {
+    'amazon.com': { name: 'Amazon', category: 'online' },
+    'walmart.com': { name: 'Walmart', category: 'general' },
+    'target.com': { name: 'Target', category: 'department_stores' },
+    'bestbuy.com': { name: 'Best Buy', category: 'electronics' },
+    'safeway.com': { name: 'Safeway', category: 'groceries' },
+    'kroger.com': { name: 'Kroger', category: 'groceries' },
+    'wholefoodsmarket.com': { name: 'Whole Foods', category: 'groceries' },
+    'costco.com': { name: 'Costco', category: 'warehouse_clubs' },
+    'macys.com': { name: "Macy's", category: 'department_stores' },
+    'cvs.com': { name: 'CVS', category: 'pharmacy' },
+    'walgreens.com': { name: 'Walgreens', category: 'pharmacy' },
+    'doordash.com': { name: 'DoorDash', category: 'dining' },
+    'ubereats.com': { name: 'Uber Eats', category: 'dining' },
+    'expedia.com': { name: 'Expedia', category: 'travel' },
+    'southwest.com': { name: 'Southwest', category: 'travel' },
+    'shell.com': { name: 'Shell', category: 'gas' },
+    'newegg.com': { name: 'Newegg', category: 'electronics' }
+  }
+  
+  const merchant = Object.entries(merchantMap).find(([domain]) => 
+    hostname.includes(domain)
+  )?.[1] || { name: hostname, category: 'general' }
+  
+  console.log(`🏪 Recognized merchant: ${merchant.name}`)
+  console.log(`📂 Category: ${merchant.category}`)
+  console.log(`🌐 Hostname match: ${Object.keys(merchantMap).find(domain => hostname.includes(domain)) || 'none'}`)
+}
+
+function testExtensionContext() {
+  console.log(`⚙️ Extension context valid: ${isExtensionContextValid()}`)
+  console.log(`💾 Chrome storage available: ${!!(chrome && chrome.storage && chrome.storage.local)}`)
+  console.log(`📨 Chrome runtime available: ${!!(chrome && chrome.runtime && chrome.runtime.sendMessage)}`)
+  console.log(`🆔 Runtime ID: ${chrome?.runtime?.id || 'undefined'}`)
+}
+
+function testDOMAnalysis() {
+  const totalElements = document.querySelectorAll('*').length
+  const scriptElements = document.querySelectorAll('script').length
+  const styleElements = document.querySelectorAll('style').length
+  const visibleElements = document.querySelectorAll('*:not(script):not(style):not(noscript)').length
+  
+  console.log(`📊 Total DOM elements: ${totalElements}`)
+  console.log(`📜 Script elements: ${scriptElements}`)
+  console.log(`🎨 Style elements: ${styleElements}`)
+  console.log(`👁️ Visible elements analyzed: ${visibleElements}`)
+  
+  // Check for common checkout indicators
+  const checkoutIndicators = [
+    '.checkout-button', '.place-order', '.complete-order', '.payment-section',
+    '[data-testid*="checkout"]', '[data-testid*="payment"]', '.order-summary',
+    '.billing-section', '.shipping-section'
+  ]
+  
+  console.log("🔍 Checkout indicators found:")
+  checkoutIndicators.forEach(selector => {
+    const elements = document.querySelectorAll(selector)
+    if (elements.length > 0) {
+      console.log(`   ${selector}: ${elements.length} elements`)
+    }
+  })
+}
+
+// Interactive testing functions
+function testSpecificAmount(testAmount) {
+  console.log(`🧪 Testing with mock amount: $${testAmount}`)
+  // This would simulate finding a specific amount
+  return testAmount
+}
+
+function simulateCheckout() {
+  console.log("🎭 Simulating checkout scenario...")
+  if (!checkoutOverlay) {
+    console.log("📱 No overlay present, triggering show...")
+    showRecommendationOverlay()
+  } else {
+    console.log("📱 Overlay already present")
+  }
+}
+
+function forceHideOverlay() {
+  console.log("🚫 Force hiding overlay...")
+  hideRecommendationOverlay()
+}
+
+// Make all test functions available globally
+window.ccDiagnostic = runDiagnostic
+window.ccTestSuite = runTestSuite
+window.ccTestCheckout = testCheckoutPageDetection
+window.ccTestAmount = testAmountDetection
+window.ccTestMerchant = testMerchantRecognition
+window.ccTestExtension = testExtensionContext
+window.ccTestDOM = testDOMAnalysis
+window.ccSimulateCheckout = simulateCheckout
+window.ccForceHide = forceHideOverlay
+window.ccTestSpecificAmount = testSpecificAmount
+
+// Helper function to check if extension context is still valid
+function isExtensionContextValid(): boolean {
+  try {
+    return !!(chrome && chrome.runtime && chrome.runtime.id)
+  } catch (error) {
+    console.log("SAFEWAY DEBUG: Extension context invalidated")
+    return false
+  }
+}
+
+// Helper function to safely access chrome.storage
+async function safeStorageGet(key: string): Promise<any> {
+  try {
+    if (!isExtensionContextValid()) {
+      console.log("SAFEWAY DEBUG: Extension context invalid, cannot access storage")
+      return {}
+    }
+    
+    if (!chrome.storage || !chrome.storage.local) {
+      console.log("SAFEWAY DEBUG: chrome.storage.local not available")
+      return {}
+    }
+    
+    return await chrome.storage.local.get(key)
+  } catch (error) {
+    console.log("SAFEWAY DEBUG: Error accessing storage:", error)
+    return {}
+  }
+}
+
+// Helper function to safely send runtime messages
+function safeSendMessage(message: any): void {
+  try {
+    if (!isExtensionContextValid()) {
+      console.log("SAFEWAY DEBUG: Extension context invalid, cannot send message")
+      return
+    }
+    
+    if (!chrome.runtime || !chrome.runtime.sendMessage) {
+      console.log("SAFEWAY DEBUG: chrome.runtime.sendMessage not available")
+      return
+    }
+    
+    chrome.runtime.sendMessage(message)
+  } catch (error) {
+    console.log("SAFEWAY DEBUG: Error sending message:", error)
+  }
+}
 
 // Simple checkout detection based on URL and basic page elements
 let checkoutOverlay: HTMLElement | null = null
@@ -37,6 +323,22 @@ function isCheckoutPage(): boolean {
   
   console.log("SAFEWAY DEBUG: Checking if checkout page...", hostname, url)
   
+  // First, exclude pages that are definitely NOT checkout pages
+  const excludePatterns = [
+    'signin', 'sign-in', 'login', 'auth', 'register', 'signup', 'sign-up',
+    'forgot-password', 'reset-password', 'verify', 'confirmation',
+    'oauth', 'sso', 'account', 'profile', 'settings'
+  ]
+  
+  const isExcludedPage = excludePatterns.some(pattern => 
+    hostname.includes(pattern) || url.includes(`/${pattern}`) || url.includes(`${pattern}.`)
+  )
+  
+  if (isExcludedPage) {
+    console.log("SAFEWAY DEBUG: Excluded page type (signin/auth/etc), returning false")
+    return false
+  }
+  
   // Amazon specific checkout detection - be more precise
   if (hostname.includes('amazon.com')) {
     // Only trigger on actual FINAL checkout pages, NOT cart pages
@@ -49,6 +351,7 @@ function isCheckoutPage(): boolean {
     const isCartPage = url.includes('/gp/cart/view') || url.includes('/gp/cart/')
     
     if (isAmazonFinalCheckout && !isCartPage) {
+      console.log("SAFEWAY DEBUG: Amazon checkout page detected")
       return true
     }
     
@@ -63,20 +366,49 @@ function isCheckoutPage(): boolean {
     return false // Don't check other conditions for Amazon
   }
   
-  // For other sites, be more restrictive
-  const strictCheckoutKeywords = ['checkout', 'payment', 'billing']
-  const hasStrictCheckoutUrl = strictCheckoutKeywords.some(keyword => url.includes(keyword))
+  // Site-specific checkout detection
+  const siteCheckoutRules = {
+    'costco.com': () => {
+      // Only actual checkout pages, not cart or signin
+      return url.includes('/checkout') && !url.includes('/cart') && !url.includes('signin')
+    },
+    'safeway.com': () => {
+      return url.includes('/checkout') || url.includes('/payment')
+    },
+    'walmart.com': () => {
+      return url.includes('/checkout') || url.includes('/pay')
+    },
+    'target.com': () => {
+      return url.includes('/checkout') || url.includes('/payment')
+    }
+  }
   
-  console.log("SAFEWAY DEBUG: URL has checkout keywords:", hasStrictCheckoutUrl)
+  // Check site-specific rules first
+  const siteRule = Object.entries(siteCheckoutRules).find(([domain]) => hostname.includes(domain))
+  if (siteRule) {
+    const isCheckout = siteRule[1]()
+    console.log(`SAFEWAY DEBUG: Site-specific rule for ${siteRule[0]}:`, isCheckout)
+    return isCheckout
+  }
+  
+  // For other sites, be more restrictive - require multiple indicators
+  const strictCheckoutKeywords = ['checkout', 'payment', 'billing']
+  const hasStrictCheckoutUrl = strictCheckoutKeywords.some(keyword => 
+    url.includes(`/${keyword}`) || url.includes(`${keyword}/`) // More specific path matching
+  )
+  
+  console.log("SAFEWAY DEBUG: URL has strict checkout keywords:", hasStrictCheckoutUrl)
   
   // Only check cart if combined with other indicators
   const hasCartUrl = url.includes('/cart') && (
     document.querySelector('.checkout-button') ||
     document.querySelector('[data-testid*="checkout"]') ||
-    document.querySelector('.payment-section')
+    document.querySelector('.payment-section') ||
+    document.querySelector('.place-order') ||
+    document.querySelector('.complete-order')
   )
   
-  console.log("SAFEWAY DEBUG: URL has cart:", hasCartUrl)
+  console.log("SAFEWAY DEBUG: URL has cart with checkout elements:", hasCartUrl)
   
   if (hasStrictCheckoutUrl || hasCartUrl) {
     console.log("SAFEWAY DEBUG: IS CHECKOUT PAGE - returning true")
@@ -106,8 +438,8 @@ async function showRecommendationOverlay() {
   console.log("SAFEWAY DEBUG: Getting cards from storage...")
   
   try {
-    // Get user's cards from storage
-    const result = await chrome.storage.local.get('creditCards')
+    // Get user's cards from storage using safe method
+    const result = await safeStorageGet('creditCards')
     const cards = result.creditCards || []
     
     console.log("SAFEWAY DEBUG: Found", cards.length, "cards")
@@ -280,7 +612,7 @@ function addOverlayToPage() {
 
   const manageBtn = checkoutOverlay.querySelector('#cc-overlay-manage')
   manageBtn?.addEventListener('click', () => {
-    chrome.runtime.sendMessage({ action: 'openPopup' })
+    safeSendMessage({ action: 'openPopup' })
   })
 
   const usedBtn = checkoutOverlay.querySelector('#cc-overlay-used')
@@ -334,11 +666,26 @@ function addOverlayToPage() {
     }
   }
 
-  setTimeout(() => {
+  // Longer timeout, but allow user interaction to keep it open
+  const timeoutId = setTimeout(() => {
     if (checkoutOverlay) {
+      console.log("SAFEWAY DEBUG: Auto-hiding overlay after timeout")
       hideRecommendationOverlay()
     }
-  }, 15000) // Increased timeout from 12s to 15s
+  }, 30000) // Increased to 30 seconds
+  
+  // Cancel timeout if user interacts with overlay
+  if (checkoutOverlay) {
+    checkoutOverlay.addEventListener('mouseenter', () => {
+      clearTimeout(timeoutId)
+      console.log("SAFEWAY DEBUG: Overlay timeout cancelled due to mouse interaction")
+    })
+    
+    checkoutOverlay.addEventListener('click', () => {
+      clearTimeout(timeoutId)
+      console.log("SAFEWAY DEBUG: Overlay timeout cancelled due to click interaction")
+    })
+  }
 }
 
 async function getBestRecommendation(cards) {
@@ -356,10 +703,13 @@ async function getBestRecommendation(cards) {
     'costco.com': { name: 'Costco', category: 'warehouse_clubs' },
     'macys.com': { name: "Macy's", category: 'department_stores' },
     'cvs.com': { name: 'CVS', category: 'pharmacy' },
+    'walgreens.com': { name: 'Walgreens', category: 'pharmacy' },
     'doordash.com': { name: 'DoorDash', category: 'dining' },
     'ubereats.com': { name: 'Uber Eats', category: 'dining' },
     'expedia.com': { name: 'Expedia', category: 'travel' },
-    'southwest.com': { name: 'Southwest', category: 'travel' }
+    'southwest.com': { name: 'Southwest', category: 'travel' },
+    'shell.com': { name: 'Shell', category: 'gas' },
+    'newegg.com': { name: 'Newegg', category: 'electronics' }
   }
   
   const merchant = Object.entries(merchantMap).find(([domain]) => 
@@ -541,19 +891,29 @@ async function waitForAmazonPriceElements(): Promise<number> {
 
 async function getCachedCartAmount(): Promise<number | null> {
   try {
-    const result = await chrome.storage.local.get('lastCartAmount')
+    const result = await safeStorageGet('lastCartAmount')
     const cached = result.lastCartAmount
     if (cached && cached.timestamp && Date.now() - cached.timestamp < 600000) {
       return cached.amount
     }
   } catch (error) {
-    // Silent error handling
+    console.log("SAFEWAY DEBUG: Error getting cached cart amount:", error)
   }
   return null
 }
 
 async function cacheCartAmount(amount: number): Promise<void> {
   try {
+    if (!isExtensionContextValid()) {
+      console.log("SAFEWAY DEBUG: Extension context invalid, cannot cache amount")
+      return
+    }
+    
+    if (!chrome.storage || !chrome.storage.local) {
+      console.log("SAFEWAY DEBUG: chrome.storage.local not available for caching")
+      return
+    }
+    
     const url = window.location.href
     if (url.includes('/gp/cart/') && amount > 0) {
       await chrome.storage.local.set({
@@ -565,7 +925,7 @@ async function cacheCartAmount(amount: number): Promise<void> {
       })
     }
   } catch (error) {
-    // Silent error handling
+    console.log("SAFEWAY DEBUG: Error caching cart amount:", error)
   }
 }
 
@@ -639,24 +999,47 @@ function detectCheckoutPageAmount(): number {
     'subtotal', 'total'
   ]
   
-  const allElements = document.querySelectorAll('*')
+  // Get only visible, non-script elements to avoid JavaScript pollution
+  const allElements = document.querySelectorAll('*:not(script):not(style):not(noscript)')
   let foundEstimatedTotal = false
   let bestAmount = 0
   let bestScore = 0
   
   for (const element of allElements) {
+    // Skip elements that are likely to contain code or irrelevant content
+    if (element.tagName === 'SCRIPT' || element.tagName === 'STYLE' || element.tagName === 'NOSCRIPT') {
+      continue
+    }
+    
     const text = element.textContent || ''
     const lowerText = text.toLowerCase()
     
+    // Skip elements with very long text that might be minified JavaScript
+    if (text.length > 1000) {
+      continue
+    }
+    
+    // Skip elements that look like minified code (lots of special characters, no spaces)
+    const codeIndicators = /[{}();,=&|!]+.*[{}();,=&|!]+/
+    if (codeIndicators.test(text) && text.replace(/\s/g, '').length > 100) {
+      continue
+    }
+    
     if (lowerText.includes('estimated total')) {
       foundEstimatedTotal = true
-      console.log(`SAFEWAY DEBUG: Found 'estimated total' element: "${text.trim()}"`)
+      console.log(`SAFEWAY DEBUG: Found 'estimated total' element: "${text.trim().substring(0, 100)}..."`)
     }
     
     // Check if element contains any total keywords and a dollar amount
     for (const keyword of totalKeywords) {
       if (lowerText.includes(keyword) && text.includes('$')) {
-        console.log(`SAFEWAY DEBUG: Found keyword "${keyword}" in element: "${text.trim()}"`)
+        // Additional filter: skip if this looks like code/script content
+        if (text.includes('function') || text.includes('var ') || text.includes('return ') || 
+            text.includes('typeof') || text.includes('Object.') || text.includes('prototype')) {
+          continue
+        }
+        
+        console.log(`SAFEWAY DEBUG: Found keyword "${keyword}" in element: "${text.trim().substring(0, 100)}..."`)
         
         // Multiple patterns to catch different formatting
         const patterns = [
@@ -669,7 +1052,7 @@ function detectCheckoutPageAmount(): number {
           const match = text.match(pattern)
           if (match) {
             const amount = parseFloat(match[1].replace(/,/g, ''))
-            console.log(`SAFEWAY DEBUG: Extracted amount $${amount} from "${text.trim()}"`)
+            console.log(`SAFEWAY DEBUG: Extracted amount $${amount} from "${text.trim().substring(0, 100)}..."`)
             
             if (amount > 1 && amount < 10000) {
               // Score amounts based on keyword priority - heavily favor "estimated total"
@@ -960,7 +1343,7 @@ async function updateOverlayWithBetterAmount() {
   
   // Get fresh cards and recommendation
   try {
-    const result = await chrome.storage.local.get('creditCards')
+    const result = await safeStorageGet('creditCards')
     const cards = result.creditCards || []
     
     if (cards.length > 0) {
@@ -1024,24 +1407,45 @@ function checkForCheckout() {
   }
 }
 
-// Initialize monitoring - check less frequently to reduce CPU usage
-setInterval(checkForCheckout, 3000)
+// Only initialize if extension context is valid
+if (isExtensionContextValid()) {
+  // Initialize monitoring - check less frequently to reduce CPU usage
+  setInterval(() => {
+    if (isExtensionContextValid()) {
+      checkForCheckout()
+    }
+  }, 3000)
 
-// Also check on URL changes (for SPAs like Amazon)
-let currentUrl = window.location.href
-setInterval(() => {
-  if (window.location.href !== currentUrl) {
-    currentUrl = window.location.href
-    setTimeout(checkForCheckout, 1000) // Delay to let page load
+  // Also check on URL changes (for SPAs like Amazon)
+  let currentUrl = window.location.href
+  setInterval(() => {
+    if (isExtensionContextValid() && window.location.href !== currentUrl) {
+      currentUrl = window.location.href
+      setTimeout(() => {
+        if (isExtensionContextValid()) {
+          checkForCheckout()
+        }
+      }, 1000) // Delay to let page load
+    }
+  }, 1000)
+
+  // Check immediately and after DOM loads
+  checkForCheckout()
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+        if (isExtensionContextValid()) {
+          checkForCheckout()
+        }
+      }, 1000)
+    })
+  } else {
+    setTimeout(() => {
+      if (isExtensionContextValid()) {
+        checkForCheckout()
+      }
+    }, 1000)
   }
-}, 1000)
-
-// Check immediately and after DOM loads
-checkForCheckout()
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(checkForCheckout, 1000)
-  })
 } else {
-  setTimeout(checkForCheckout, 1000)
+  console.log("SAFEWAY DEBUG: Extension context invalid at startup, not initializing")
 }
