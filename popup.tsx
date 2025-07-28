@@ -1,13 +1,21 @@
 import { useState, useEffect } from "react"
-import type { CreditCard, MerchantCategory, SavingsStats } from "~types"
+import type { CreditCard, MerchantCategory, SavingsStats, StorageData } from "~types"
 import { storageService } from "~services/storage"
 import { savingsTracker } from "~services/savingsTracker"
+import { achievementsService } from "~services/achievementsService"
 
 function IndexPopup() {
-  const [activeTab, setActiveTab] = useState<'cards' | 'savings'>('cards')
+  const [activeTab, setActiveTab] = useState<'cards' | 'savings' | 'achievements' | 'settings'>('cards')
   const [cards, setCards] = useState<CreditCard[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
   const [savingsStats, setSavingsStats] = useState<SavingsStats | null>(null)
+  const [achievements, setAchievements] = useState<any[]>([])
+  const [totalPoints, setTotalPoints] = useState<number>(0)
+  const [settings, setSettings] = useState<StorageData['settings']>({
+    enableNotifications: true,
+    trackSpending: true,
+    darkMode: false
+  })
   const [newCard, setNewCard] = useState({
     name: "",
     category: "general" as MerchantCategory,
@@ -19,8 +27,12 @@ function IndexPopup() {
 
   useEffect(() => {
     loadCards()
+    loadSettings()
     if (activeTab === 'savings') {
       loadSavingsStats()
+    }
+    if (activeTab === 'achievements') {
+      loadAchievements()
     }
   }, [activeTab])
 
@@ -32,6 +44,25 @@ function IndexPopup() {
   const loadSavingsStats = async () => {
     const stats = await savingsTracker.getSavingsStats()
     setSavingsStats(stats)
+  }
+
+  const loadAchievements = async () => {
+    const userAchievements = await achievementsService.getUserAchievements()
+    setAchievements(userAchievements)
+    
+    const points = await achievementsService.getTotalPoints()
+    setTotalPoints(points)
+  }
+
+  const loadSettings = async () => {
+    const savedSettings = await storageService.getSettings()
+    setSettings(savedSettings)
+  }
+
+  const updateSettings = async (newSettings: Partial<StorageData['settings']>) => {
+    const updatedSettings = { ...settings, ...newSettings }
+    setSettings(updatedSettings)
+    await storageService.updateSettings(updatedSettings)
   }
 
   const addCard = async () => {
@@ -73,45 +104,73 @@ function IndexPopup() {
     await loadCards()
   }
 
+  // Theme system
+  const lightTheme = {
+    background: "#ffffff",
+    cardBackground: "#ffffff",
+    text: "#000000",
+    textSecondary: "#666666",
+    textMuted: "#999999",
+    border: "#e5e7eb",
+    primary: "#4F46E5",
+    success: "#10b981",
+    warning: "#f59e0b",
+    danger: "#ef4444",
+    inputBackground: "#ffffff",
+    inputBorder: "#d1d5db",
+    emptyStateBackground: "#f9fafb"
+  }
+
+  const darkTheme = {
+    background: "#1f2937",
+    cardBackground: "#374151",
+    text: "#f9fafb",
+    textSecondary: "#d1d5db",
+    textMuted: "#9ca3af",
+    border: "#4b5563",
+    primary: "#6366f1",
+    success: "#10b981",
+    warning: "#f59e0b",
+    danger: "#ef4444",
+    inputBackground: "#374151",
+    inputBorder: "#4b5563",
+    emptyStateBackground: "#374151"
+  }
+
+  const theme = settings.darkMode ? darkTheme : lightTheme
+
   return (
-    <div style={{ width: 400, minHeight: 500, padding: 16, fontFamily: "system-ui" }}>
+    <div style={{ width: 400, minHeight: 500, padding: 16, fontFamily: "system-ui", background: theme.background, color: theme.text }}>
       <div style={{ marginBottom: 20 }}>
-        <h3 style={{ margin: 0, marginBottom: 12 }}>💳 Credit Card Assistant</h3>
+        <h3 style={{ margin: 0, marginBottom: 12, color: theme.text }}>💳 Credit Card Assistant</h3>
         
         {/* Tab Navigation */}
-        <div style={{ display: "flex", borderBottom: "1px solid #e5e7eb", marginBottom: 16 }}>
-          <button
-            onClick={() => setActiveTab('cards')}
-            style={{
-              flex: 1,
-              padding: "8px 0",
-              border: "none",
-              background: "none",
-              borderBottom: activeTab === 'cards' ? "2px solid #4F46E5" : "2px solid transparent",
-              color: activeTab === 'cards' ? "#4F46E5" : "#6B7280",
-              fontWeight: activeTab === 'cards' ? 600 : 400,
-              cursor: "pointer",
-              fontSize: 14
-            }}
-          >
-            My Cards
-          </button>
-          <button
-            onClick={() => setActiveTab('savings')}
-            style={{
-              flex: 1,
-              padding: "8px 0",
-              border: "none",
-              background: "none",
-              borderBottom: activeTab === 'savings' ? "2px solid #4F46E5" : "2px solid transparent",
-              color: activeTab === 'savings' ? "#4F46E5" : "#6B7280",
-              fontWeight: activeTab === 'savings' ? 600 : 400,
-              cursor: "pointer",
-              fontSize: 14
-            }}
-          >
-            Savings
-          </button>
+        <div style={{ display: "flex", borderBottom: `1px solid ${theme.border}`, marginBottom: 16 }}>
+          {[
+            { key: 'cards', label: 'Cards' },
+            { key: 'savings', label: 'Savings' },
+            { key: 'achievements', label: '🏆' },
+            { key: 'settings', label: '⚙️' }
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key as any)}
+              style={{
+                flex: tab.key === 'achievements' || tab.key === 'settings' ? 'none' : 1,
+                minWidth: tab.key === 'achievements' || tab.key === 'settings' ? 40 : 'auto',
+                padding: "8px 12px",
+                border: "none",
+                background: "none",
+                borderBottom: activeTab === tab.key ? `2px solid ${theme.primary}` : "2px solid transparent",
+                color: activeTab === tab.key ? theme.primary : theme.textSecondary,
+                fontWeight: activeTab === tab.key ? 600 : 400,
+                cursor: "pointer",
+                fontSize: 14
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -150,7 +209,7 @@ function IndexPopup() {
               </p>
             </div>
           ) : (
-            <div style={{ space: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {cards.map(card => (
                 <div key={card.id} style={{
                   border: "1px solid #e5e7eb",
@@ -200,7 +259,7 @@ function IndexPopup() {
             </button>
           </div>
 
-          <div style={{ space: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ marginBottom: 12 }}>
               <label style={{ display: "block", fontSize: 12, marginBottom: 4, fontWeight: 500 }}>
                 Card Name
@@ -384,7 +443,7 @@ function IndexPopup() {
                 <h5 style={{ margin: 0, marginBottom: 12, fontSize: 14, fontWeight: 600 }}>
                   Monthly Breakdown
                 </h5>
-                <div style={{ space: 8 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {savingsStats.monthlyStats.map((monthData, idx) => (
                     <div key={idx} style={{
                       display: "flex",
@@ -432,6 +491,246 @@ function IndexPopup() {
               <p style={{ margin: 0, color: "#666" }}>Loading savings data...</p>
             </div>
           )}
+        </div>
+      ) : activeTab === 'achievements' ? (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h4 style={{ margin: 0, color: theme.text }}>Achievements</h4>
+            <div style={{
+              background: "linear-gradient(135deg, #ffd700 0%, #ffed4e 100%)",
+              color: "#1f2937",
+              padding: "4px 12px",
+              borderRadius: 12,
+              fontSize: 12,
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: 4
+            }}>
+              <span>⭐</span>
+              <span>{totalPoints} points</span>
+            </div>
+          </div>
+
+          {achievements.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {achievements.map((achievement, idx) => (
+                <div key={achievement.id} style={{
+                  background: achievement.isUnlocked 
+                    ? `linear-gradient(135deg, ${achievementsService.getDifficultyColor(achievement.difficulty)}20 0%, ${achievementsService.getDifficultyColor(achievement.difficulty)}10 100%)`
+                    : theme.cardBackground,
+                  border: achievement.isUnlocked 
+                    ? `2px solid ${achievementsService.getDifficultyColor(achievement.difficulty)}40`
+                    : `1px solid ${theme.border}`,
+                  borderRadius: 8,
+                  padding: 12,
+                  opacity: achievement.isUnlocked ? 1 : 0.7
+                }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                    <div style={{ 
+                      fontSize: 24, 
+                      opacity: achievement.isUnlocked ? 1 : 0.5,
+                      filter: achievement.isUnlocked ? 'none' : 'grayscale(100%)'
+                    }}>
+                      {achievement.icon}
+                    </div>
+                    
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                        <div style={{ 
+                          fontWeight: 600, 
+                          fontSize: 13, 
+                          color: theme.text,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6
+                        }}>
+                          {achievement.title}
+                          <span style={{ 
+                            fontSize: 8,
+                            background: achievementsService.getDifficultyColor(achievement.difficulty),
+                            color: "white",
+                            padding: "2px 6px",
+                            borderRadius: 4,
+                            textTransform: "uppercase",
+                            fontWeight: 500
+                          }}>
+                            {achievement.difficulty}
+                          </span>
+                        </div>
+                        <div style={{
+                          fontSize: 10,
+                          color: theme.success,
+                          fontWeight: 600
+                        }}>
+                          +{achievement.pointsReward}
+                        </div>
+                      </div>
+                      <div style={{ 
+                        fontSize: 11, 
+                        color: theme.textSecondary, 
+                        marginBottom: 8,
+                        lineHeight: 1.4
+                      }}>
+                        {achievement.description}
+                      </div>
+                      
+                      <div style={{ 
+                        width: "100%", 
+                        height: 4, 
+                        background: theme.border, 
+                        borderRadius: 2, 
+                        overflow: "hidden",
+                        marginBottom: 4
+                      }}>
+                        <div style={{
+                          width: `${achievement.progress}%`,
+                          height: "100%",
+                          background: achievement.isUnlocked 
+                            ? achievementsService.getDifficultyColor(achievement.difficulty)
+                            : theme.textMuted,
+                          transition: "width 0.3s ease-in-out"
+                        }} />
+                      </div>
+                      
+                      <div style={{ 
+                        fontSize: 10, 
+                        color: theme.textMuted,
+                        display: "flex",
+                        justifyContent: "space-between"
+                      }}>
+                        <span>
+                          {achievement.currentValue} / {achievement.target}
+                        </span>
+                        <span>
+                          {achievement.progress.toFixed(0)}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ textAlign: "center", padding: 40 }}>
+              <div style={{ fontSize: 24, marginBottom: 8 }}>🏆</div>
+              <p style={{ margin: 0, color: theme.textSecondary }}>Loading achievements...</p>
+            </div>
+          )}
+        </div>
+      ) : activeTab === 'settings' ? (
+        <div>
+          <h4 style={{ margin: 0, marginBottom: 16, color: theme.text }}>Settings</h4>
+          
+          {/* Dark Mode Toggle */}
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: 16,
+            border: `1px solid ${theme.border}`,
+            borderRadius: 8,
+            marginBottom: 12,
+            background: theme.cardBackground
+          }}>
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 4, color: theme.text }}>🌙 Dark Mode</div>
+              <div style={{ fontSize: 12, color: theme.textSecondary }}>Toggle between light and dark themes</div>
+            </div>
+            <label style={{ position: "relative", display: "inline-block", width: 44, height: 24 }}>
+              <input
+                type="checkbox"
+                checked={settings.darkMode}
+                onChange={(e) => updateSettings({ darkMode: e.target.checked })}
+                style={{ opacity: 0, width: 0, height: 0 }}
+              />
+              <span style={{
+                position: "absolute",
+                cursor: "pointer",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: settings.darkMode ? theme.primary : "#ccc",
+                transition: "0.4s",
+                borderRadius: 24
+              }}>
+                <span style={{
+                  position: "absolute",
+                  height: 18,
+                  width: 18,
+                  left: settings.darkMode ? 23 : 3,
+                  bottom: 3,
+                  backgroundColor: "white",
+                  transition: "0.4s",
+                  borderRadius: "50%"
+                }} />
+              </span>
+            </label>
+          </div>
+
+          {/* Notifications Toggle */}
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: 16,
+            border: `1px solid ${theme.border}`,
+            borderRadius: 8,
+            marginBottom: 12,
+            background: theme.cardBackground
+          }}>
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 4, color: theme.text }}>🔔 Smart Notifications</div>
+              <div style={{ fontSize: 12, color: theme.textSecondary }}>Get alerts for better card choices</div>
+            </div>
+            <label style={{ position: "relative", display: "inline-block", width: 44, height: 24 }}>
+              <input
+                type="checkbox"
+                checked={settings.enableNotifications}
+                onChange={(e) => updateSettings({ enableNotifications: e.target.checked })}
+                style={{ opacity: 0, width: 0, height: 0 }}
+              />
+              <span style={{
+                position: "absolute",
+                cursor: "pointer",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: settings.enableNotifications ? theme.primary : "#ccc",
+                transition: "0.4s",
+                borderRadius: 24
+              }}>
+                <span style={{
+                  position: "absolute",
+                  height: 18,
+                  width: 18,
+                  left: settings.enableNotifications ? 23 : 3,
+                  bottom: 3,
+                  backgroundColor: "white",
+                  transition: "0.4s",
+                  borderRadius: "50%"
+                }} />
+              </span>
+            </label>
+          </div>
+
+          {/* Extension Info */}
+          <div style={{
+            background: theme.emptyStateBackground,
+            border: `1px solid ${theme.border}`,
+            borderRadius: 8,
+            padding: 16,
+            textAlign: "center"
+          }}>
+            <div style={{ fontSize: 18, marginBottom: 8 }}>💳</div>
+            <div style={{ fontWeight: 600, marginBottom: 4, color: theme.text }}>SmartCard AI Assistant</div>
+            <div style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 8 }}>Version 1.0.0</div>
+            <div style={{ fontSize: 11, color: theme.textMuted }}>
+              Get optimal credit card recommendations and track your savings across 60+ merchants
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

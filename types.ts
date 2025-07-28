@@ -71,5 +71,6 @@ export interface StorageData {
   settings: {
     enableNotifications: boolean;
     trackSpending: boolean;
+    darkMode: boolean;
   };
 }

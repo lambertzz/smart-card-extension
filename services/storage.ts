@@ -1,15 +1,37 @@
 import type { CreditCard, Transaction, StorageData } from "~types";
 
 const STORAGE_KEYS = {
-  CARDS: 'creditCards',
+  CARDS: 'cards',
   TRANSACTIONS: 'transactions',
   SETTINGS: 'settings'
 } as const;
 
 class StorageService {
   async getCards(): Promise<CreditCard[]> {
-    const result = await chrome.storage.local.get(STORAGE_KEYS.CARDS);
-    return result[STORAGE_KEYS.CARDS] || [];
+    try {
+      // First check for cards under the new key
+      let result = await chrome.storage.local.get(STORAGE_KEYS.CARDS);
+      let cards = result[STORAGE_KEYS.CARDS];
+      
+      // If no cards found under new key, check old key and migrate
+      if (!cards || cards.length === 0) {
+        const oldResult = await chrome.storage.local.get('creditCards');
+        const oldCards = oldResult['creditCards'];
+        
+        if (oldCards && oldCards.length > 0) {
+          // Migrate old cards to new key
+          await chrome.storage.local.set({ [STORAGE_KEYS.CARDS]: oldCards });
+          // Remove old key to clean up
+          await chrome.storage.local.remove('creditCards');
+          cards = oldCards;
+        }
+      }
+      
+      return cards || [];
+    } catch (error) {
+      console.error('Error getting cards:', error);
+      return [];
+    }
   }
 
   async saveCard(card: CreditCard): Promise<void> {
@@ -52,12 +74,25 @@ class StorageService {
     const result = await chrome.storage.local.get(STORAGE_KEYS.SETTINGS);
     return result[STORAGE_KEYS.SETTINGS] || {
       enableNotifications: true,
-      trackSpending: true
+      trackSpending: true,
+      darkMode: false
     };
   }
 
   async saveSettings(settings: StorageData['settings']): Promise<void> {
     await chrome.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
+  }
+
+  async updateSettings(settings: StorageData['settings']): Promise<void> {
+    await chrome.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
+  }
+
+  async addCard(card: CreditCard): Promise<void> {
+    await this.saveCard(card);
+  }
+
+  async addTransaction(transaction: Transaction): Promise<void> {
+    await this.saveTransaction(transaction);
   }
 
   async updateCardCapUsage(cardId: string, category: string, amount: number): Promise<void> {
