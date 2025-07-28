@@ -137,22 +137,53 @@ class RecommendationEngine {
 
   // Helper method to estimate transaction amount from page context
   estimateTransactionAmount(): number {
-    // Try to find total amount on checkout page
+    // Use the same enhanced detection logic as checkoutDetector
+    // Try text pattern detection first (most reliable)
+    const textPatterns = [
+      /estimated total[:\s]*\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i,
+      /order total[:\s]*\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i,
+      /grand total[:\s]*\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i,
+      /final total[:\s]*\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i,
+      /total[:\s]+\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i
+    ]
+    
+    const allText = document.body.textContent || document.body.innerText || ''
+    
+    for (const pattern of textPatterns) {
+      const match = allText.match(pattern)
+      if (match) {
+        const amount = parseFloat(match[1].replace(/,/g, ''))
+        if (amount > 1 && amount < 10000) {
+          return amount
+        }
+      }
+    }
+
+    // Enhanced selector-based detection
     const amountSelectors = [
-      '.total', '.grand-total', '.final-total', 
+      '.total', '.grand-total', '.final-total', '.estimated-total',
       '[data-testid*="total"]', '[data-testid*="amount"]',
-      '.price-total', '.order-total', '.checkout-total'
+      '.price-total', '.order-total', '.checkout-total',
+      '[class*="total"]', '[class*="Total"]'
     ];
 
     for (const selector of amountSelectors) {
       const element = document.querySelector(selector);
       if (element) {
         const text = element.textContent || '';
-        const match = text.match(/\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/);
-        if (match) {
-          const amount = parseFloat(match[1].replace(/,/g, ''));
-          if (amount > 0 && amount < 10000) { // Reasonable bounds
-            return amount;
+        const patterns = [
+          /\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/,
+          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*\$/,
+          /(\d{1,3}(?:,\d{3})*\.\d{2})/
+        ];
+        
+        for (const pattern of patterns) {
+          const match = text.match(pattern);
+          if (match) {
+            const amount = parseFloat(match[1].replace(/,/g, ''));
+            if (amount > 0 && amount < 10000) {
+              return amount;
+            }
           }
         }
       }
