@@ -1,5 +1,11 @@
 import type { PlasmoCSConfig } from "plasmo"
 
+declare global {
+  interface Window {
+    creditCardExtensionLoaded?: boolean
+  }
+}
+
 export const config: PlasmoCSConfig = {
   matches: [
     "https://*.amazon.com/*",
@@ -21,6 +27,13 @@ export const config: PlasmoCSConfig = {
     "https://*.shell.com/*"
   ]
 }
+
+// Prevent multiple instances of this script
+if (window.creditCardExtensionLoaded) {
+  console.log("SAFEWAY DEBUG: Extension already loaded, exiting")
+  return
+}
+window.creditCardExtensionLoaded = true
 
 console.log("SAFEWAY DEBUG: Content script loaded on", window.location.hostname, "URL:", window.location.href)
 
@@ -275,6 +288,8 @@ function isExtensionContextValid(): boolean {
 // Helper function to safely access chrome.storage
 async function safeStorageGet(key: string): Promise<any> {
   try {
+    console.log(`SAFEWAY DEBUG: Attempting to get storage key: ${key}`)
+    
     if (!isExtensionContextValid()) {
       console.log("SAFEWAY DEBUG: Extension context invalid, cannot access storage")
       return {}
@@ -285,7 +300,10 @@ async function safeStorageGet(key: string): Promise<any> {
       return {}
     }
     
-    return await chrome.storage.local.get(key)
+    console.log("SAFEWAY DEBUG: Chrome storage available, getting data...")
+    const result = await chrome.storage.local.get(key)
+    console.log(`SAFEWAY DEBUG: Storage get result for ${key}:`, result)
+    return result
   } catch (error) {
     console.log("SAFEWAY DEBUG: Error accessing storage:", error)
     return {}
@@ -316,6 +334,37 @@ let checkoutOverlay: HTMLElement | null = null
 let lastOverlayShown = 0 // Timestamp of last overlay shown
 const OVERLAY_COOLDOWN = 30000 // 30 seconds cooldown between overlays
 let currentRecommendation: any = null // Store current recommendation for updates
+let isCreatingOverlay = false // Prevent concurrent overlay creation
+
+// Global cleanup function to remove ALL overlays
+function globalOverlayCleanup() {
+  console.log("SAFEWAY DEBUG: Global overlay cleanup started")
+  
+  // Remove all elements with the overlay ID
+  const allOverlays = document.querySelectorAll('#credit-card-recommendation-overlay')
+  console.log(`SAFEWAY DEBUG: Found ${allOverlays.length} overlays to remove`)
+  allOverlays.forEach((overlay, index) => {
+    console.log(`SAFEWAY DEBUG: Removing overlay ${index + 1}`)
+    overlay.remove()
+  })
+  
+  // Also check for any elements with similar classes or content
+  const similarOverlays = document.querySelectorAll('[id*="credit-card"], [class*="credit-card-overlay"]')
+  similarOverlays.forEach(overlay => {
+    if (overlay.textContent?.includes('Credit Card Assistant') || 
+        overlay.textContent?.includes('Best Card')) {
+      console.log("SAFEWAY DEBUG: Removing similar overlay")
+      overlay.remove()
+    }
+  })
+  
+  // Reset all tracking
+  checkoutOverlay = null
+  currentRecommendation = null
+  isCreatingOverlay = false
+  
+  console.log("SAFEWAY DEBUG: Global cleanup completed")
+}
 
 function isCheckoutPage(): boolean {
   const url = window.location.href.toLowerCase()
@@ -422,27 +471,64 @@ function isCheckoutPage(): boolean {
 async function showRecommendationOverlay() {
   console.log("SAFEWAY DEBUG: showRecommendationOverlay called")
   
-  if (checkoutOverlay) {
-    console.log("SAFEWAY DEBUG: Overlay already exists, returning")
+  // Prevent concurrent overlay creation
+  if (isCreatingOverlay) {
+    console.log("SAFEWAY DEBUG: Already creating overlay, aborting")
     return
   }
   
-  // Check cooldown to prevent spam
-  const now = Date.now()
-  if (now - lastOverlayShown < OVERLAY_COOLDOWN) {
-    console.log("SAFEWAY DEBUG: On cooldown, returning")
-    return
-  }
+  // Global cleanup first - this removes ALL overlays
+  globalOverlayCleanup()
   
-  lastOverlayShown = now
-  console.log("SAFEWAY DEBUG: Getting cards from storage...")
+  isCreatingOverlay = true
   
   try {
-    // Get user's cards from storage using safe method
-    const result = await safeStorageGet('creditCards')
-    const cards = result.creditCards || []
     
+    // Check if overlay was just removed and still exists somehow
+    if (document.querySelector('#credit-card-recommendation-overlay')) {
+      console.log("SAFEWAY DEBUG: Overlay still exists after cleanup, aborting")
+      return
+    }
+    
+    // Check cooldown to prevent spam
+    const now = Date.now()
+    if (now - lastOverlayShown < OVERLAY_COOLDOWN) {
+      console.log("SAFEWAY DEBUG: On cooldown, returning")
+      return
+    }
+    
+    lastOverlayShown = now
+    console.log("SAFEWAY DEBUG: Getting cards from storage...")
+    
+    // Get user's cards from storage using safe method - check both keys
+    let cards = []
+    
+    // First try the new key 'cards'
+    let result = await safeStorageGet('cards')
+    cards = result.cards || []
+    
+    // If no cards found, try the old key 'creditCards' and migrate
+    if (cards.length === 0) {
+      const oldResult = await safeStorageGet('creditCards')
+      const oldCards = oldResult.creditCards || []
+      
+      if (oldCards.length > 0) {
+        console.log("SAFEWAY DEBUG: Found cards in old key, migrating...")
+        // Migrate to new key
+        try {
+          await chrome.storage.local.set({ 'cards': oldCards })
+          await chrome.storage.local.remove('creditCards')
+          cards = oldCards
+        } catch (error) {
+          console.log("SAFEWAY DEBUG: Migration failed:", error)
+          cards = oldCards // Use old cards anyway
+        }
+      }
+    }
+    
+    console.log("SAFEWAY DEBUG: Storage result:", result)
     console.log("SAFEWAY DEBUG: Found", cards.length, "cards")
+    console.log("SAFEWAY DEBUG: Cards array:", cards)
     
     if (cards.length === 0) {
       console.log("SAFEWAY DEBUG: No cards, showing add cards overlay")
@@ -466,10 +552,17 @@ async function showRecommendationOverlay() {
   } catch (error) {
     console.log("SAFEWAY DEBUG: Error:", error)
     showAddCardsOverlay()
+  } finally {
+    isCreatingOverlay = false
   }
 }
 
 function showAddCardsOverlay() {
+  // Remove any existing overlay first
+  if (checkoutOverlay) {
+    hideRecommendationOverlay()
+  }
+  
   checkoutOverlay = document.createElement('div')
   checkoutOverlay.id = 'credit-card-recommendation-overlay'
   checkoutOverlay.innerHTML = `
@@ -530,6 +623,11 @@ function showAddCardsOverlay() {
 }
 
 function showCardRecommendationOverlay(recommendation) {
+  // Remove any existing overlay first
+  if (checkoutOverlay) {
+    hideRecommendationOverlay()
+  }
+  
   checkoutOverlay = document.createElement('div')
   checkoutOverlay.id = 'credit-card-recommendation-overlay'
   checkoutOverlay.innerHTML = `
@@ -605,6 +703,10 @@ function showCardRecommendationOverlay(recommendation) {
 }
 
 function addOverlayToPage() {
+  // Remove any existing overlays from DOM first
+  const existingOverlays = document.querySelectorAll('#credit-card-recommendation-overlay')
+  existingOverlays.forEach(overlay => overlay.remove())
+  
   document.body.appendChild(checkoutOverlay)
 
   const closeBtn = checkoutOverlay.querySelector('#cc-overlay-close')
@@ -1367,6 +1469,7 @@ async function updateOverlayWithBetterAmount() {
 }
 
 function hideRecommendationOverlay() {
+  // Clean up our tracked overlay
   if (checkoutOverlay) {
     // Clean up event listeners
     if (checkoutOverlay._eventListeners) {
@@ -1380,6 +1483,14 @@ function hideRecommendationOverlay() {
     checkoutOverlay = null
     currentRecommendation = null
   }
+  
+  // Also remove any stray overlays that might exist in the DOM
+  const strayOverlays = document.querySelectorAll('#credit-card-recommendation-overlay')
+  strayOverlays.forEach(overlay => {
+    if (overlay !== checkoutOverlay) {
+      overlay.remove()
+    }
+  })
 }
 
 function checkForCheckout() {
@@ -1405,6 +1516,23 @@ function checkForCheckout() {
     // Update overlay with better amount if available
     updateOverlayWithBetterAmount()
   }
+}
+
+// Listen for storage changes to refresh overlay when cards are added
+if (chrome?.storage?.onChanged) {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && (changes.cards || changes.creditCards) && isExtensionContextValid()) {
+      console.log("SAFEWAY DEBUG: Credit cards changed, refreshing overlay...")
+      // Global cleanup first
+      globalOverlayCleanup()
+      // Small delay to ensure storage is updated
+      setTimeout(() => {
+        if (isCheckoutPage()) {
+          showRecommendationOverlay() // Show updated overlay
+        }
+      }, 500)
+    }
+  })
 }
 
 // Only initialize if extension context is valid
